@@ -4,7 +4,9 @@ This [Heroku buildpack][1] installs the Datadog Agent in your Heroku dyno to col
 
 ## Installation
 
-This guide assumes that you already have your application running on Heroku. See the Heroku documentation to learn how to deploy your application to Heroku.
+Follow the [in-app installation guide in Fleet Automation][33] to install the Datadog Agent on Heroku.
+
+This guide assumes that you already have your application running on Heroku. See the [Heroku documentation][34] to learn how to deploy your application to Heroku.
 
 1. Go to [Datadog API settings][3] and copy your Datadog API key. Export it to an environment variable:
 
@@ -33,14 +35,14 @@ This guide assumes that you already have your application running on Heroku. See
    heroku labs:enable runtime-dyno-metadata -a $APPNAME
 
    # Set hostname in Datadog as appname.dynotype.dynonumber for metrics continuity
-   heroku config:add DD_DYNO_HOST=true
+   heroku config:add DD_DYNO_HOST=true -a $APPNAME
 
    # Set the DD_SITE env variable automatically
-   heroku config:add DD_SITE=$DD_SITE
+   heroku config:add DD_SITE=$DD_SITE -a $APPNAME
 
    # Add this buildpack and set your Datadog API key
-   heroku buildpacks:add --index 1 https://github.com/DataDog/heroku-buildpack-datadog.git
-   heroku config:add DD_API_KEY=$DD_API_KEY
+   heroku buildpacks:add --index 1 https://github.com/DataDog/heroku-buildpack-datadog.git -a $APPNAME
+   heroku config:add DD_API_KEY=$DD_API_KEY -a $APPNAME
 
    # Deploy to Heroku forcing a rebuild
    git commit --allow-empty -m "Rebuild slug"
@@ -141,8 +143,9 @@ By default, the Datadog Agent runs on each of the dynos that are part of the app
 To disable the Datadog Agent based on dyno type, add the following snippet to your [prerun.sh script](#prerun-script) (adapting it to the type of dynos you don't want to monitor):
 
 ```shell
+DYNOTYPE=${DYNO%%.*}
 # Disable the Datadog Agent based on dyno type
-if [ "$DYNOTYPE" == "run" ] || [ "$DYNOTYPE" == "scheduler" ] || [ "$DYNOTYPE" == "release" ]; then
+if [[ "$DYNOTYPE" == "run" || "$DYNOTYPE" == "scheduler" || "$DYNOTYPE" == "release" || "$DYNOTYPE" == advanced-scheduler* ]]; then
   DISABLE_DATADOG_AGENT="true"
 fi
 ```
@@ -213,6 +216,52 @@ heroku config:set DD_ENABLE_DBM=true
 
 Database Monitoring requires creating database credentials for the Datadog Agent, therefore, DBM is not available in the Heroku Postgres Essential Tier plans.
 
+### Enabling Dogstatsd Mapper profiles (Sidekiq)
+
+Some integrations, like [Sidekiq](https://docs.datadoghq.com/integrations/sidekiq/), require [DogStatsD Mapper](https://docs.datadoghq.com/developers/dogstatsd/dogstatsd_mapper/) profiles.
+
+To add a new DogStatsD Mapper profile, add the following snippet in your [prerun.sh script](#prerun-script):
+
+```
+cat << 'EOF' >> "$DATADOG_CONF"
+
+dogstatsd_mapper_profiles:
+  - name: '<PROFILE_NAME>'
+    prefix: '<PROFILE_PREFIX>'
+    mappings:
+      - match: '<METRIC_TO_MATCH>'
+        match_type: '<MATCH_TYPE>'
+        name: '<MAPPED_METRIC_NAME>'
+        tags:
+          '<TAG_KEY>': '<TAG_VALUE_TO_EXPAND>'
+EOF
+```
+
+For example, to enable the Sidekiq integration, add the following snippet:
+
+```
+cat << 'EOF' >> "$DATADOG_CONF"
+
+dogstatsd_mapper_profiles:
+  - name: sidekiq
+    prefix: "sidekiq."
+    mappings:
+      - match: 'sidekiq\.sidekiq\.(.*)'
+        match_type: "regex"
+        name: "sidekiq.$1"
+      - match: 'sidekiq\.jobs\.(.*)\.perform'
+        name: "sidekiq.jobs.perform"
+        match_type: "regex"
+        tags:
+          worker: "$1"
+      - match: 'sidekiq\.jobs\.(.*)\.(count|success|failure)'
+        name: "sidekiq.jobs.worker.$2"
+        match_type: "regex"
+        tags:
+          worker: "$1"
+EOF
+```
+
 ### Enabling other integrations
 
 To enable any [Datadog-<INTEGRATION_NAME> integration][19]:
@@ -237,6 +286,40 @@ instances:
 
 **Note**: See the sample [mcache.d/conf.yaml][22] for all available configuration options.
 
+#### Using the prerun.sh script to dynamically change the integration configuration
+
+If you have configuration details stored in environment variables (like database configuration or secrets), you can use the [prerun.sh script](#prerun-script) to dynamically add those to your Datadog Agent configuration before the Agent starts.
+
+For example, to enable the Postgres integration, the file `datadog/conf.d/postgres.d/conf.yaml` could be added with placeholders at the root of your application (or `/$DD_HEROKU_CONF_FOLDER/conf.d/postgres.d/conf.yaml` if you have changed this [configuration option](#configuration)):
+
+```yaml
+init_config:
+
+instances:
+  - host: <YOUR HOSTNAME>
+    port: <YOUR PORT>
+    username: <YOUR USERNAME>
+    password: <YOUR PASSWORD>
+    dbname: <YOUR DBNAME>
+    ssl: True
+```
+
+And then use the `prerun.sh` script to replace those placeholders with the actual values from the environment variables:
+
+```bash
+# Update the Postgres configuration from above using the Heroku application environment variable
+if [ -n "$DATABASE_URL" ]; then
+  POSTGREGEX='^postgres://([^:]+):([^@]+)@([^:]+):([^/]+)/(.*)$'
+  if [[ $DATABASE_URL =~ $POSTGREGEX ]]; then
+    sed -i "s/<YOUR HOSTNAME>/${BASH_REMATCH[3]}/" "$DD_CONF_DIR/conf.d/postgres.d/conf.yaml"
+    sed -i "s/<YOUR USERNAME>/${BASH_REMATCH[1]}/" "$DD_CONF_DIR/conf.d/postgres.d/conf.yaml"
+    sed -i "s/<YOUR PASSWORD>/${BASH_REMATCH[2]}/" "$DD_CONF_DIR/conf.d/postgres.d/conf.yaml"
+    sed -i "s/<YOUR PORT>/${BASH_REMATCH[4]}/" "$DD_CONF_DIR/conf.d/postgres.d/conf.yaml"
+    sed -i "s/<YOUR DBNAME>/${BASH_REMATCH[5]}/" "$DD_CONF_DIR/conf.d/postgres.d/conf.yaml"
+  fi
+fi
+```
+
 ### Community Integrations
 
 If the integration you are enabling is part of the [Community Integrations][23], install the package as part of the [prerun script](#prerun-script).
@@ -257,7 +340,8 @@ As the filesystem in a Heroku application will be shared by all dynos, if you en
 
 For example, if the Gunicorn integration only needs to run on `web` type dynos, add the following to your prerun script:
 
-```
+```shell
+DYNOTYPE=${DYNO%%.*}
 if [ "$DYNOTYPE" != "web" ]; then
   rm -f "$DD_CONF_DIR/conf.d/gunicorn.d/conf.yaml"
 fi
@@ -289,6 +373,9 @@ The example below demonstrates a few of the things you can do in the `prerun.sh`
 
 ```shell
 #!/usr/bin/env bash
+
+# Extract dyno type from Heroku's '$DYNO' environment variable
+DYNOTYPE="${DYNO%%.*}"
 
 # Disable the Datadog Agent based on dyno type
 if [ "$DYNOTYPE" == "run" ]; then
@@ -370,6 +457,8 @@ RUN sh -c "echo 'deb [signed-by=${DATADOG_APT_KEYRING}] https://apt.datadoghq.co
 RUN touch ${DATADOG_APT_KEYRING}
 RUN curl -o /tmp/DATADOG_APT_KEY_CURRENT.public "${DATADOG_APT_KEYS_URL}/DATADOG_APT_KEY_CURRENT.public" && \
     gpg --ignore-time-conflict --no-default-keyring --keyring ${DATADOG_APT_KEYRING} --import /tmp/DATADOG_APT_KEY_CURRENT.public
+RUN curl -o /tmp/DATADOG_APT_KEY_06462314.public "${DATADOG_APT_KEYS_URL}/DATADOG_APT_KEY_06462314.public" && \
+    gpg --ignore-time-conflict --no-default-keyring --keyring ${DATADOG_APT_KEYRING} --import /tmp/DATADOG_APT_KEY_06462314.public
 RUN curl -o /tmp/DATADOG_APT_KEY_C0962C7D.public "${DATADOG_APT_KEYS_URL}/DATADOG_APT_KEY_C0962C7D.public" && \
     gpg --ignore-time-conflict --no-default-keyring --keyring ${DATADOG_APT_KEYRING} --import /tmp/DATADOG_APT_KEY_C0962C7D.public
 RUN curl -o /tmp/DATADOG_APT_KEY_F14F620E.public "${DATADOG_APT_KEYS_URL}/DATADOG_APT_KEY_F14F620E.public" && \
@@ -549,7 +638,7 @@ After an upgrade of the buildpack or Agent, you must recompile your application'
 [15]: https://docs.datadoghq.com/logs/guide/collect-heroku-logs
 [16]: https://docs.datadoghq.com/logs/logs_to_metrics/
 [17]: https://docs.datadoghq.com/database_monitoring/
-[18]: https://docs.datadoghq.com/database_monitoring/setup_postgres/selfhosted/?tab=postgres10#grant-the-agent-access
+[18]: https://docs.datadoghq.com/database_monitoring/setup_postgres/heroku/
 [19]: https://docs.datadoghq.com/integrations/
 [20]: https://docs.datadoghq.com/getting_started/integrations/#configuring-agent-integrations
 [21]: https://docs.datadoghq.com/integrations/mcache/
@@ -564,3 +653,5 @@ After an upgrade of the buildpack or Agent, you must recompile your application'
 [30]: https://github.com/DataDog/heroku-buildpack-datadog
 [31]: https://github.com/miketheman/heroku-buildpack-datadog
 [32]: https://github.com/DataDog/heroku-buildpack-datadog/blob/master/CHANGELOG.md
+[33]: https://app.datadoghq.com/fleet/install-agent/latest?platform=heroku
+[34]: https://devcenter.heroku.com/categories/deployment

@@ -4,11 +4,160 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [2.46] - 2026-09-09
+
+### Added
+- Datadog Agent 7 pinned version is now `7.83.1`.
+
+## [2.45] - 2026-08-28
+
+### Added
+- Datadog Agent 7 pinned version is now `7.82.3`.
+
+## [2.44] - 2026-07-29
+
+### Added
+- Datadog Agent 7 pinned version is now `7.81.2`.
+- Scope apt-get update to the Datadog APT repository - #444 @joshcass
+
+## [2.43] - 2026-06-22
+
+### Added
+- Datadog Agent 7 pinned version is now `7.80.2`.
+
+## [2.42] - 2026-06-04
+
+### Added
+- Datadog Agent 7 pinned version is now `7.79.1`.
+
+## [2.41] - 2026-05-21
+
+### Added
+- Datadog Agent 7 pinned version is now `7.79.0`.
+
+## [2.40] - 2026-04-22
+
+### Added
+- Datadog Agent 7 pinned version is now `7.78.0`.
+
+## [2.39] - 2026-03-26
+
+### Added
+- Datadog Agent 7 pinned version is now `7.77.1`.
+
+## [2.38] - 2026-01-30
+
+### Added
+- Datadog Agent 7 pinned version is now `7.75.1`.
+
+### Changed
+- Boolean comparisons for Heroku variables are now case insensitive
+
+## [2.37] - 2026-01-09
+
+### Added
+- Datadog Agent 7 pinned version is now `7.74.0`.
+
+## [2.36] - 2025-12-01
+
+### Added
+- Datadog Agent 7 pinned version is now `7.72.3`.
+
+## [2.35] - 2025-10-21
+
+### Added
+- Datadog Agent 7 pinned version is now `7.71.2`.
+
+## [2.34] - 2025-09-10
+
+### Added
+- Datadog Agent 7 pinned version is now `7.70.0`.
+
+## [2.33] - 2025-07-30
+
+### Added
+- Datadog Agent 7 pinned version is now `7.68.3`.
+
+### Changed
+- `DYNOTYPE` variable is now available to be used in the `prerun.sh` script.
+
+## [2.32] - 2025-06-24
+
+### Added
+- Datadog Agent 7 pinned version is now `7.67.0`.
+
+## [2.31] - 2025-06-03
+
+### Added
+- Datadog Agent 7 pinned version is now `7.66.0`.
+
+## [2.30] - 2025-05-07
+
+### Added
+- Datadog Agent 7 pinned version is now `7.65.0`.
+
+## [2.29] - 2025-03-20
+
+### Added
+- Datadog Agent 7 pinned version is now `7.64.1`.
+
+## [2.28] - 2025-02-20
+
+### Added
+- Datadog Agent 7 pinned version is now `7.63.0`.
+
+## [2.27] - 2025-01-27
+
+### Added
+- Datadog Agent 7 pinned version is now `7.61.0`.
+- Datadog Agent 6 pinned version is now `6.53.1`.
+
+## [2.26] - 2025-01-07
+
+### Added
+- Datadog Agent 7 pinned version is now `7.60.1`.
+
+## [2.25] - 2024-11-19
+
+### Added
+- Datadog Agent 7 pinned version is now `7.59.0`.
+
+## [2.24] - 2024-10-29
+
+### Added
+- Datadog Agent 7 pinned version is now `7.58.1`.
+- The different binaries now use non-deprecated newer config flags.
+
+## [2.23] - 2024-08-26
+
+### Added
+- Datadog Agent 7 pinned version is now `7.56.0`.
+
+## [2.22] - 2024-07-17
+
+### Added
+- Datadog Agent 7 pinned version is now `7.55.1`.
+
+## [2.21] - 2024-06-07
+
+### Added
+- Datadog Agent 7 pinned version is now `7.54.0`.
+
+## [2.20] - 2024-05-01
+
+### Added
+- Datadog Agent pinned versions are now `7.53.0` and `6.53.0`.
+
+## [2.19] - 2024-04-01
+
+### Added
+- Datadog Agent pinned versions are now `7.52.0` and `6.52.0`.
+- When process monitoring is enabled, the process Agent is embedded in the core Agent (reduces slug size)
+
 ## [2.18] - 2024-02-20
 
 ### Added
 - Datadog Agent pinned versions are now `7.51.0` and `6.51.0`.
-
 
 ## [2.17] - 2023-12-20
 

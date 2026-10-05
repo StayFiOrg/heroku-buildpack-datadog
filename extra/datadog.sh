@@ -19,9 +19,6 @@ export PATH="$APT_DIR/usr/bin:$DD_BIN_DIR:$PATH"
 # Export agent's LD_LIBRARY_PATH to be used by the agent-wrapper
 export DD_LD_LIBRARY_PATH="$APT_DIR/opt/datadog-agent/embedded/lib:$APT_DIR/usr/lib/x86_64-linux-gnu:$APT_DIR/usr/lib"
 
-# Get the lower case for the log level
-DD_LOG_LEVEL_LOWER=$(echo "$DD_LOG_LEVEL" | tr '[:upper:]' '[:lower:]')
-
 # Set Datadog configs
 export DD_LOG_FILE="$DD_LOG_DIR/datadog.log"
 DD_APM_LOG="$DD_LOG_DIR/datadog-apm.log"
@@ -36,6 +33,10 @@ sed -i -e"s|^.*additional_checksd:.*$|additional_checksd: $DD_CONF_DIR/checks.d\
 
 # Update the Datadog conf yaml to disable cloud provider metadata
 sed -i -e"s|^.*cloud_provider_metadata:.*$|cloud_provider_metadata: []|" "$DATADOG_CONF"
+
+version_equal_or_newer() {
+  [ "$1" == "$(echo -e "$1\n$2" | sort -V | tail -n1)" ]
+}
 
 # Include application's datadog configs
 APP_DATADOG_DEFAULT="/app/datadog"
@@ -72,7 +73,7 @@ done
 
 # Add tags to the config file
 DYNOHOST="$(hostname )"
-DYNOTYPE=${DYNO%%.*}
+export DYNOTYPE=${DYNO%%.*}
 BUILDPACKVERSION="dev"
 DYNO_TAGS="dyno:$DYNO dynotype:$DYNOTYPE buildpackversion:$BUILDPACKVERSION"
 
@@ -92,7 +93,7 @@ sed -i -e"s|^# apm_config:$|apm_config:|" "$DATADOG_CONF"
 sed -i -e"s|^apm_config:$|apm_config:\n  log_file: $DD_APM_LOG|" "$DATADOG_CONF"
 
 # Uncomment the Process Agent configs and enable.
-if [ "$DD_PROCESS_AGENT" == "true" ]; then
+if [ "${DD_PROCESS_AGENT,,}" == "true" ]; then
   sed -i -e"s|^# process_config:$|process_config:\n  enabled: true|" "$DATADOG_CONF"
   sed -i -e"s|^process_config:$|process_config:\n  log_file: $DD_PROC_LOG|" "$DATADOG_CONF"
 fi
@@ -110,11 +111,11 @@ if [ -z "$DD_API_KEY" ]; then
 fi
 
 if [ -z "$DD_HOSTNAME" ]; then
-  if [ "$DD_DYNO_HOST" == "true" ]; then
+  if [ "${DD_DYNO_HOST,,}" == "true" ]; then
     # Set the hostname to dyno name and ensure rfc1123 compliance.
     HAN="$(echo "$HEROKU_APP_NAME" | sed -e 's/[^a-zA-Z0-9-]/-/g' -e 's/^-//g')"
     if [ "$HAN" != "$HEROKU_APP_NAME" ]; then
-      if [ "$DD_LOG_LEVEL_LOWER" == "debug" ]; then
+      if [ "${DD_LOG_LEVEL,,}" == "debug" ]; then
         echo "WARNING: The appname \"$HEROKU_APP_NAME\" contains invalid characters. Using \"$HAN\" instead."
       fi
     fi
@@ -127,19 +128,23 @@ if [ -z "$DD_HOSTNAME" ]; then
   fi
 else
   # Generate a warning about DD_HOSTNAME deprecation.
-  if [ "$DD_LOG_LEVEL_LOWER" == "debug" ]; then
+  if [ "${DD_LOG_LEVEL,,}" == "debug" ]; then
     echo "WARNING: DD_HOSTNAME has been set. Setting this environment variable may result in metrics errors. To remove it, run: heroku config:unset DD_HOSTNAME"
   fi
 fi
 
 # Disable core checks (these read the host, not the dyno).
-if [ "$DD_DISABLE_HOST_METRICS" == "true" ]; then
+if [ "${DD_DISABLE_HOST_METRICS,,}" == "true" ]; then
   find "$DD_CONF_DIR"/conf.d -name "conf.yaml.default" -exec mv {} {}_disabled \;
 fi
 
 # Find if the Python folder is 2 or 3
 PYTHON_DIR=$(find "$DD_DIR/embedded/lib/" -maxdepth 1 -type d -regex ".*/python[2-3]\.[0-9]+" -printf "%f")
 DD_PYTHON_VERSION=$(echo $PYTHON_DIR | sed -n -E 's/^python([2-3])\.[0-9]+/\1/p')
+
+# Get agent versions
+DD_AGENT_VERSION=$(agent-wrapper version | cut -d " " -f2)
+DD_AGENT_MAJOR_VERSION=$(echo $DD_AGENT_VERSION | cut -d'.' -f1)
 
 if [ "$DD_PYTHON_VERSION" = "3" ]; then
   # This is not needed for Agent7 onwards, as it only has one Python version
@@ -194,7 +199,7 @@ if [[ ! -z "$ENABLE_HEROKU_POSTGRES" ]]; then
 fi
 
 # Update the Postgres configuration from above using the Heroku application environment variable
-if [ "$DD_ENABLE_HEROKU_POSTGRES" == "true" ]; then
+if [ "${DD_ENABLE_HEROKU_POSTGRES,,}" == "true" ]; then
   # The default connection URL is set in DATABASE_URL, but can be configured by the user
   if [[ -z ${DD_POSTGRES_URL_VAR} ]]; then
     DD_POSTGRES_URL_VAR="DATABASE_URL"
@@ -218,7 +223,7 @@ if [ "$DD_ENABLE_HEROKU_POSTGRES" == "true" ]; then
         echo -e "    dbname: ${BASH_REMATCH[5]}" >> "$POSTGRES_CONF/conf.yaml"
         echo -e "    ssl: require" >> "$POSTGRES_CONF/conf.yaml"
         echo -e "    disable_generic_tags: false" >> "$POSTGRES_CONF/conf.yaml"
-        if [ "$DD_ENABLE_DBM" == "true" ]; then
+        if [ "${DD_ENABLE_DBM,,}" == "true" ]; then
           echo -e "    dbm: true" >> "$POSTGRES_CONF/conf.yaml"
         fi
       fi
@@ -242,7 +247,7 @@ if [[ ! -z "$ENABLE_HEROKU_REDIS" ]]; then
 fi
 
 # Update the Redis configuration from above using the Heroku application environment variable
-if [ "$DD_ENABLE_HEROKU_REDIS" == "true" ]; then
+if [ "${DD_ENABLE_HEROKU_REDIS,,}" == "true" ]; then
 
   # The default connection URL is set in REDIS_URL, but can be configured by the user
   if [[ -z ${DD_REDIS_URL_VAR} ]]; then
@@ -292,25 +297,15 @@ fi
 if [ -n "$DD_TAGS" ]; then
   DD_TAGS_NORMALIZED="$(sed "s/,[ ]\?/\ /g"  <<< "$DD_TAGS")"
   DD_TAGS="$DYNO_TAGS $DD_TAGS_NORMALIZED"
-  DD_TAGS_NORMALIZED_YAML="$(sed 's/\//\\\//g'  <<< "$DD_TAGS_NORMALIZED")"
 else
   DD_TAGS="$DYNO_TAGS"
 fi
 
 export DD_VERSION="$DD_VERSION"
 export DD_TAGS="$DD_TAGS"
-if [ "$DD_LOG_LEVEL_LOWER" == "debug" ]; then
-  echo "[DEBUG] Buildpack normalized tags: $DD_TAGS_NORMALIZED"
-  echo "[DEBUG] Buildpack normalized tags to yaml: $DD_TAGS_NORMALIZED_YAML"
+if [ "${DD_LOG_LEVEL,,}" == "debug" ]; then
+  echo "[DEBUG] Buildpack normalized tags: $DD_TAGS"
 fi
-
-DD_TAGS_YAML="tags:\n  - $(sed 's/\ /\\n  - /g'  <<< "$DD_TAGS_NORMALIZED_YAML")"
-
-# Inject tags after example tags.
-# Config files for agent versions 6.11 and earlier:
-sed -i "s/^#   - role:database$/#   - role:database\n$DD_TAGS_YAML/" "$DATADOG_CONF"
-# Agent versions 6.12 and later:
-sed -i "s/^\(## @param tags\)/$DD_TAGS_YAML\n\1/" "$DATADOG_CONF"
 
 # Export host type as dyno
 export DD_HEROKU_DYNO="true"
@@ -331,28 +326,65 @@ else
   fi
 
   # Run the Datadog Agent
-  if [ "$DD_LOG_LEVEL_LOWER" == "debug" ]; then
+  if [ "${DD_LOG_LEVEL,,}" == "debug" ]; then
     echo "Starting Datadog Agent on $DD_HOSTNAME"
   fi
   bash -c "PYTHONPATH=\"$DD_PYTHONPATH\" LD_LIBRARY_PATH=\"$DD_LD_LIBRARY_PATH\" $DD_BIN_DIR/agent $RUN_COMMAND -c $DATADOG_CONF 2>&1 &"
 
+  # From version 7.48 onwards, the config flag for the trace agent changed to --config
+  if [ "$DD_AGENT_MAJOR_VERSION" == "6" ]; then
+    DD_AGENT_BASE_VERSION="6.48.0"
+  else
+    DD_AGENT_BASE_VERSION="7.48.0"
+  fi
+  if version_equal_or_newer $DD_AGENT_VERSION $DD_AGENT_BASE_VERSION; then
+    CONFIG_FLAG="--config"
+  else
+    CONFIG_FLAG="-config"
+  fi
   # The Trace Agent will run by default.
-  if [ "$DD_APM_ENABLED" == "false" ]; then
-    if [ "$DD_LOG_LEVEL_LOWER" == "debug" ]; then
+  if [ "${DD_APM_ENABLED,,}" == "false" ]; then
+    if [ "${DD_LOG_LEVEL,,}" == "debug" ]; then
       echo "The Datadog Trace Agent has been disabled. Set DD_APM_ENABLED to true or unset it."
     fi
   else
-    if [ "$DD_LOG_LEVEL_LOWER" == "debug" ]; then
+    if [ "${DD_LOG_LEVEL,,}" == "debug" ]; then
       echo "Starting Datadog Trace Agent on $DD_HOSTNAME"
     fi
-    bash -c "PYTHONPATH=\"$DD_PYTHONPATH\" LD_LIBRARY_PATH=\"$DD_LD_LIBRARY_PATH\" $DD_DIR/embedded/bin/trace-agent -config $DATADOG_CONF 2>&1 &"
+    bash -c "PYTHONPATH=\"$DD_PYTHONPATH\" LD_LIBRARY_PATH=\"$DD_LD_LIBRARY_PATH\" $DD_DIR/embedded/bin/trace-agent $CONFIG_FLAG $DATADOG_CONF 2>&1 &"
   fi
 
-  # The Process Agent must be run explicitly
-  if [ "$DD_PROCESS_AGENT" == "true" ]; then
-    if [ "$DD_LOG_LEVEL_LOWER" == "debug" ]; then
-      echo "Starting Datadog Process Agent on $DD_HOSTNAME"
+  # From version 7.36 onwards, the config flag for the process agent changed to --cfgpath
+  if [ "$DD_AGENT_MAJOR_VERSION" == "6" ]; then
+    DD_AGENT_BASE_VERSION="6.36.0"
+  else
+    DD_AGENT_BASE_VERSION="7.36.0"
+  fi
+  if version_equal_or_newer $DD_AGENT_VERSION $DD_AGENT_BASE_VERSION; then
+    CONFIG_FLAG="--cfgpath"
+  else
+    CONFIG_FLAG="--config"
+  fi
+
+  if ! version_equal_or_newer "$DD_AGENT_VERSION" "7.68.0" || [ "$DD_AGENT_MAJOR_VERSION" == "6" ]; then
+    # Starting on Agent 7.52.0, and until 7.68.0, the process agent is included in the agent binary
+    if [ "$DD_AGENT_MAJOR_VERSION" == "6" ]; then
+      DD_AGENT_BASE_VERSION="6.52.0"
+    else
+      DD_AGENT_BASE_VERSION="7.52.0"
     fi
-    bash -c "PYTHONPATH=\"$DD_PYTHONPATH\" LD_LIBRARY_PATH=\"$DD_LD_LIBRARY_PATH\" $DD_DIR/embedded/bin/process-agent -config $DATADOG_CONF 2>&1 &"
+    # The Process Agent must be run explicitly
+    if [ "${DD_PROCESS_AGENT,,}" == "true" ]; then
+      if [ "${DD_LOG_LEVEL,,}" == "debug" ]; then
+        echo "Starting Datadog Process Agent on $DD_HOSTNAME"
+      fi
+      # Starting on Agent 7.52.0, the process agent is included in the agent binary
+      if version_equal_or_newer $DD_AGENT_VERSION $DD_AGENT_BASE_VERSION; then
+        ln -sfn "$DD_BIN_DIR"/agent "$DD_BIN_DIR"/process-agent
+        bash -c "PYTHONPATH=\"$DD_PYTHONPATH\" LD_LIBRARY_PATH=\"$DD_LD_LIBRARY_PATH\" $DD_BIN_DIR/process-agent $CONFIG_FLAG $DATADOG_CONF 2>&1 &"
+      else
+        bash -c "PYTHONPATH=\"$DD_PYTHONPATH\" LD_LIBRARY_PATH=\"$DD_LD_LIBRARY_PATH\" $DD_DIR/embedded/bin/process-agent $CONFIG_FLAG $DATADOG_CONF 2>&1 &"
+      fi
+    fi
   fi
 fi
